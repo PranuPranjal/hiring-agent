@@ -10,6 +10,8 @@ from typing import Optional
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import contextlib
+import sys
 
 from score import main as score_main
 
@@ -17,8 +19,8 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
-# Allow requests from the frontend dev server during development
-CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
+# For local development allow all origins (change in production)
+CORS(app)
 
 
 @app.route("/health", methods=["GET"]) 
@@ -51,15 +53,7 @@ def score_route():
             tmp_path = _save_upload(uploaded)
             if "role_description" in request.form:
                 role_description = request.form.get("role_description")
-
-            result = score_main(tmp_path, role_description=role_description)
-
-            # cleanup
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
-
+            target_path = tmp_path
         else:
             data = request.get_json(force=True)
             pdf_path = data.get("pdf_path")
@@ -71,11 +65,43 @@ def score_route():
             if not os.path.exists(pdf_path):
                 return jsonify({"error": f"File not found: {pdf_path}"}), 404
 
-            result = score_main(pdf_path, role_description=role_description)
+            target_path = pdf_path
+
+        # Capture stdout/stderr and logging output while running the scoring pipeline
+        log_buffer = io.StringIO()
+        handler = logging.StreamHandler(log_buffer)
+        handler.setLevel(logging.DEBUG)
+        root_logger = logging.getLogger()
+        root_logger.addHandler(handler)
+
+        try:
+            with contextlib.redirect_stdout(log_buffer), contextlib.redirect_stderr(log_buffer):
+                result = score_main(target_path, role_description=role_description)
+        except Exception as e:
+            # Ensure logs include the exception traceback
+            logger.exception("Exception while running score_main")
+            # read logs and return error
+            handler.flush()
+            logs = log_buffer.getvalue()
+            return (
+                jsonify({"error": str(e), "logs": logs}),
+                500,
+            )
+        finally:
+            root_logger.removeHandler(handler)
+
+        # cleanup uploaded temp file if present
+        if "file" in request.files:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
         # The scoring pipeline returns a pydantic model (EvaluationData) or None
         if result is None:
-            return jsonify({"error": "Scoring failed"}), 500
+            handler.flush()
+            logs = log_buffer.getvalue()
+            return jsonify({"error": "Scoring failed", "logs": logs}), 500
 
         # Convert to JSON-serializable dict if pydantic BaseModel
         try:
@@ -83,7 +109,10 @@ def score_route():
         except Exception:
             payload = str(result)
 
-        return jsonify({"result": payload}), 200
+        handler.flush()
+        logs = log_buffer.getvalue()
+
+        return jsonify({"result": payload, "logs": logs}), 200
 
     except Exception as e:
         logger.exception("Error in /score")

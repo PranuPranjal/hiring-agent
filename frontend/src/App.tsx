@@ -6,6 +6,7 @@ type ScoreResult = any
 function App() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ScoreResult | null>(null)
+  const [logs, setLogs] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const roleRef = useRef<HTMLTextAreaElement | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -27,22 +28,27 @@ function App() {
     form.append('file', file)
     if (roleDescription) form.append('role_description', roleDescription)
 
-    try {
+      try {
       setLoading(true)
       const resp = await fetch('http://localhost:8000/score', {
         method: 'POST',
         body: form,
       })
 
-      if (!resp.ok) {
-        const text = await resp.text()
-        throw new Error(`Server error: ${resp.status} ${text}`)
-      }
+        if (!resp.ok) {
+          const text = await resp.text()
+          const msg = `Server error: ${resp.status} ${text}`
+          console.error(msg)
+          throw new Error(msg)
+        }
 
       const data = await resp.json()
       setResult(data.result)
+      setLogs(data.logs || null)
     } catch (err: any) {
-      setError(err.message || String(err))
+      console.error('Error during fetch:', err)
+      // Show a brief friendly message but keep full details in console
+      setError(err.message?.includes('Failed to fetch') ? 'Network error: could not reach backend. Make sure the backend is running (http://localhost:8000).' : (err.message || String(err)))
     } finally {
       setLoading(false)
     }
@@ -76,6 +82,13 @@ function App() {
         <div className="result">
           <h2>Result</h2>
           <pre>{JSON.stringify(result, null, 2)}</pre>
+        </div>
+      )}
+
+      {logs && (
+        <div className="result">
+          <h2>Logs</h2>
+          <pre>{logs}</pre>
         </div>
       )}
     </div>
