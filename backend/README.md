@@ -1,3 +1,36 @@
+# Backend (Flask)
+
+This folder contains the Python backend for the hiring-agent. A small Flask wrapper has been added to expose the scoring pipeline as an HTTP API.
+
+Endpoints
+- GET /health -> health check
+- POST /score -> score a resume
+
+Usage (Windows PowerShell)
+
+Install dependencies:
+
+```powershell
+python -m venv .venv; .\.venv\Scripts\activate; pip install -r requirements.txt
+```
+
+Run server:
+
+```powershell
+python app.py
+```
+
+Example (curl, file upload):
+
+```powershell
+curl -F "file=@C:\path\to\resume.pdf" http://localhost:8000/score
+```
+
+Example (JSON):
+
+```powershell
+curl -H "Content-Type: application/json" -d '{"pdf_path": "C:/path/to/resume.pdf"}' http://localhost:8000/score
+```
 # Hiring Agent
 
 <p align="center"><strong>Resume-to-Score pipeline</strong> that extracts structured data from PDFs, enriches with GitHub signals, and outputs a fair, explainable evaluation.</p>
